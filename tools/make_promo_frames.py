@@ -23,7 +23,6 @@ WHITE = (232, 234, 240)
 FONT_CJK = r"C:\Windows\Fonts\msyh.ttc"
 FONT_CJK_BOLD = r"C:\Windows\Fonts\msyhbd.ttc"
 FONT_LATIN = r"C:\Windows\Fonts\segoeui.ttf"
-FONT_MONO = r"C:\Windows\Fonts\consola.ttf"
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from make_icon import draw_icon  # noqa: E402  (local tool module)
@@ -42,8 +41,7 @@ def vignette(img: Image.Image, strength: int = 150) -> Image.Image:
                    outline=a, width=12)
     blur = mask.filter(ImageFilter.GaussianBlur(120))
     black = Image.new("RGB", (W, H), (0, 0, 0))
-    alpha = blur.point(lambda v: min(255, int(v * 1.4)))
-    return Image.composite(black, img, alpha)
+    return Image.composite(black, img, blur.point(lambda v: min(255, int(v * 1.4))))
 
 
 def glow(img: Image.Image, center: tuple[int, int], radius: int, color=GREEN,
@@ -65,10 +63,12 @@ def center_text(d: ImageDraw.ImageDraw, y: int, text: str, f: ImageFont.FreeType
 
 
 def frame_logo(path: str) -> None:
-    img = glow(Image.new("RGB", (W, H), BG), (W // 2, 470), 620, alpha=90)
+    img = Image.new("RGB", (W, H), BG)
+    img = glow(img, (W // 2, 470), 620, alpha=90)
     img = vignette(img)               # darken the background before drawing type
+    logo = draw_icon(1024).resize((700, 700), Image.LANCZOS)
     img = img.convert("RGBA")
-    img.alpha_composite(draw_icon(1024).resize((700, 700), Image.LANCZOS), (W // 2 - 350, 120))
+    img.alpha_composite(logo, (W // 2 - 350, 120))
     d = ImageDraw.Draw(img)
     center_text(d, 850, "C++mc", font(FONT_LATIN, 92), WHITE)
     center_text(d, 970, "纯 Python 标准库写成的 Minecraft 启动器", font(FONT_CJK, 38), MUTED)
@@ -80,52 +80,59 @@ def frame_code(path: str) -> None:
     img = Image.new("RGB", (W, H), (8, 11, 16))
     d = ImageDraw.Draw(img)
     glyphs = "{}[]()<>/\\=+-*;$#01abcxyz"
-    f_small = font(FONT_MONO, 26)
+    f_small = font(r"C:\Windows\Fonts\consola.ttf", 26)
     for col in range(0, W, 34):
         x = col + random.randint(-6, 6)
         for row in range(-2, H // 32 + 2):
             y = row * 32
+            ch = random.choice(glyphs)
             shade = random.randint(40, 120)
-            d.text((x, y), random.choice(glyphs), font=f_small,
-                   fill=(int(shade * 0.35), shade, int(shade * 0.6)))
+            d.text((x, y), ch, font=f_small, fill=(int(shade * 0.35), shade, int(shade * 0.6)))
+    # neon streaks
     for _ in range(26):
         y = random.randint(0, H)
+        length = random.randint(120, 520)
         x = random.randint(0, W - 200)
-        d.line([(x, y), (x + random.randint(120, 520), y)], fill=(20, 70, 50), width=2)
+        d.line([(x, y), (x + length, y)], fill=(20, 70, 50), width=2)
     img = img.filter(ImageFilter.GaussianBlur(1.2))
     dark = Image.new("RGBA", (W, H), (5, 7, 11, 150))
     img = Image.alpha_composite(img.convert("RGBA"), dark).convert("RGB")
     img = glow(img, (W // 2, H // 2), 700, alpha=60)
     d = ImageDraw.Draw(img)
     center_text(d, 430, "零第三方依赖", font(FONT_CJK_BOLD, 86), WHITE)
-    center_text(d, 570, "只需要一个 Python 和一个 Java", font(FONT_CJK, 44), MUTED)
+    center_text(d, 570, "只需要一个 Python · 可跑万物", font(FONT_CJK, 44), MUTED)
     vignette(img, 190).save(path)
 
 
 def frame_stats(path: str) -> None:
-    img = glow(Image.new("RGB", (W, H), BG), (W // 2, H // 2), 780, alpha=55)
+    img = Image.new("RGB", (W, H), BG)
+    img = glow(img, (W // 2, H // 2), 780, alpha=55)
     img = img.convert("RGBA")
     img.alpha_composite(draw_icon(256).resize((120, 120), Image.LANCZOS), (W // 2 - 60, 90))
+    img = img.convert("RGB")
     d = ImageDraw.Draw(img)
-    for (num, label), x in zip([("923", "个版本"), ("5709", "个文件校验"), ("0", "个三方依赖")],
-                               [250, 780, 1310]):
+    stats = [("923", "个版本"), ("5709", "个文件校验"), ("0", "个三方依赖")]
+    x_positions = [250, 780, 1310]
+    for (num, label), x in zip(stats, x_positions):
         d.text((x, 430), num, font=font(FONT_LATIN, 150), fill=GREEN)
         d.text((x + 6, 620), label, font=font(FONT_CJK, 46), fill=WHITE)
     d.line([(200, 770), (1720, 770)], fill=(43, 48, 64), width=2)
     center_text(d, 810, "SHA1 逐个校验    ·    并发下载    ·    失败自动重试", font(FONT_CJK, 44), MUTED)
-    vignette(img.convert("RGB")).save(path)
+    vignette(img).save(path)
 
 
 def frame_end(path: str) -> None:
-    img = glow(Image.new("RGB", (W, H), BG), (W // 2, 380), 660, alpha=80)
+    img = Image.new("RGB", (W, H), BG)
+    img = glow(img, (W // 2, 380), 660, alpha=80)
     img = img.convert("RGBA")
     img.alpha_composite(draw_icon(512).resize((260, 260), Image.LANCZOS), (W // 2 - 130, 250))
+    img = img.convert("RGB")
     d = ImageDraw.Draw(img)
     center_text(d, 570, "C++mc", font(FONT_LATIN, 110), WHITE)
-    mono = FONT_MONO if os.path.exists(FONT_MONO) else FONT_LATIN
-    center_text(d, 710, "github.com/gunmigunm/CppMc", font(mono, 54), GREEN)
+    center_text(d, 710, "github.com/gunmigunm/CppMc", font(r"C:\Windows\Fonts\consolas.ttf" if os.path.exists(
+        r"C:\Windows\Fonts\consolas.ttf") else FONT_LATIN, 54), GREEN)
     center_text(d, 810, "Release 里直接下 CppMc.exe，双击开玩", font(FONT_CJK, 38), MUTED)
-    vignette(img.convert("RGB")).save(path)
+    vignette(img).save(path)
 
 
 def main() -> int:
