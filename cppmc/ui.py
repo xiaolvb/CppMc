@@ -13,6 +13,7 @@ from pathlib import Path
 from tkinter import filedialog, messagebox, ttk
 
 from . import auth
+from . import native as native_ui
 from .core import (
     APP_BRAND,
     APP_VERSION,
@@ -41,6 +42,12 @@ class LauncherApp:
         self.process = None
         self.account = auth.load_account()
         self.config = load_config()
+        # C++-paced UI state: the bar glides toward the target instead of jumping,
+        # and log lines are flushed in one batch per frame (see _ui_tick).
+        self._shown_pct = 0.0
+        self._progress_target = 0.0
+        self._last_ui_ms = 0
+        self._log_buffer: list[str] = []
 
         root.title(f"{APP_BRAND} — Minecraft Launcher (Python)")
         root.geometry("860x680")
@@ -53,6 +60,7 @@ class LauncherApp:
 
         threading.Thread(target=self._bootstrap, daemon=True).start()
         root.after(80, self._drain_queue)
+        root.after(16, self._ui_tick)
 
     # ------------------------------------------------------------------ style
     def _build_styles(self) -> None:
@@ -84,7 +92,7 @@ class LauncherApp:
         header = ttk.Frame(outer)
         header.pack(fill="x")
         ttk.Label(header, text=APP_BRAND, style="Title.TLabel").pack(side="left")
-        ttk.Label(header, text=f"v{APP_VERSION}   ·   纯 Python + Tkinter   ·   离线 / 正版双模式",
+        ttk.Label(header, text=f"v{APP_VERSION}   ·   Python 外壳 · C++ 加速界面 · 离线 / 正版双模式",
                   style="Muted.TLabel").pack(side="left", padx=12, pady=(8, 0))
 
         form = ttk.Frame(outer, style="Panel.TFrame", padding=14)
@@ -405,9 +413,10 @@ class LauncherApp:
                     self.append_log(message[1])
                 elif kind == "progress":
                     _, label, current, total = message
-                    percent = (current / total * 100) if total else 0
-                    self.progress.config(value=percent)
-                    self.status_var.set(f"{label} {current}/{total}（{percent:.0f}%）")
+                    self._progress_target = (current / total * 100) if total else 0
+                    self.status_var.set(
+                        f"{label} {current}/{total}（{self._progress_target:.0f}%）"
+                    )
                 elif kind == "status":
                     self.status_var.set(message[1])
                 elif kind == "versions":
@@ -430,6 +439,8 @@ class LauncherApp:
                     self.play_button.config(state=state)
                     self.install_button.config(state=state)
                     if not self.busy:
+                        self._progress_target = 0.0
+                        self._shown_pct = 0.0
                         self.progress.config(value=0)
                 elif kind == "error":
                     self.append_log("错误：" + str(message[1]))
@@ -438,11 +449,33 @@ class LauncherApp:
             pass
         self.root.after(80, self._drain_queue)
 
-    def append_log(self, message: str) -> None:
+    def _ui_tick(self) -> None:
+        """C++-paced refresh: glide the bar toward target, flush batched logs.
+
+        Runs ~30 fps; ctypes calls into cppmc_native.dll when present, otherwise
+        the pure-Python twins in cppmc/native.py do the same math.
+        """
+        now = native_ui.now_ms()
+        if native_ui.frame_pace(now, self._last_ui_ms, 33) == 1:
+            self._last_ui_ms = now
+            self._shown_pct = native_ui.approach(self._shown_pct, self._progress_target, 0.18)
+            if abs(self._progress_target - self._shown_pct) < 0.15:
+                self._shown_pct = self._progress_target
+            self.progress.config(value=self._shown_pct)
+            self._flush_log()
+        self.root.after(16, self._ui_tick)
+
+    def _flush_log(self) -> None:
+        if not self._log_buffer:
+            return
+        lines, self._log_buffer = self._log_buffer, []
         self.log_text.configure(state="normal")
-        self.log_text.insert("end", str(message) + "\n")
+        self.log_text.insert("end", "\n".join(str(line) for line in lines) + "\n")
         self.log_text.see("end")
         self.log_text.configure(state="disabled")
+
+    def append_log(self, message: str) -> None:
+        self._log_buffer.append(str(message))
 
 
 def run_gui() -> int:
