@@ -94,6 +94,15 @@ def frame_code(path: str) -> None:
         length = random.randint(120, 520)
         x = random.randint(0, W - 200)
         d.line([(x, y), (x + length, y)], fill=(20, 70, 50), width=2)
+    # C++ keyword fragments mixed into the rain
+    keywords = ["int main", "std::cout", "namespace", "std::vector", "template<>",
+                "#include <iostream>", "return 0", "std::string", "auto x =", "class App"]
+    f_kw = font(FONT_LATIN, 22)
+    for _ in range(14):
+        k = random.choice(keywords)
+        x = random.randint(80, W - 420)
+        y = random.randint(60, H - 120)
+        d.text((x, y), k, font=f_kw, fill=(34, 128, 94))
     img = img.filter(ImageFilter.GaussianBlur(1.2))
     dark = Image.new("RGBA", (W, H), (5, 7, 11, 150))
     img = Image.alpha_composite(img.convert("RGBA"), dark).convert("RGB")
