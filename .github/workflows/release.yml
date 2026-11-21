@@ -6,6 +6,7 @@ on:
     paths:
       - "CppMc.py"
       - "cppmc/**"
+      - "native/**"
       - "assets/**"
       - "tools/**"
       - ".github/workflows/release.yml"
@@ -40,13 +41,43 @@ jobs:
       - name: Draw the icon
         run: python tools/make_icon.py assets
 
+      - name: Compile C++ native helpers
+        shell: pwsh
+        continue-on-error: true
+        run: |
+          New-Item -ItemType Directory -Force cppmc/native | Out-Null
+          $vcvars = @(
+            "C:\Program Files\Microsoft Visual Studio\2022\Enterprise\VC\Auxiliary\Build\vcvars64.bat",
+            "C:\Program Files\Microsoft Visual Studio\2022\Community\VC\Auxiliary\Build\vcvars64.bat",
+            "C:\Program Files\Microsoft Visual Studio\2022\Professional\VC\Auxiliary\Build\vcvars64.bat"
+          ) | Where-Object { Test-Path $_ } | Select-Object -First 1
+          if (-not $vcvars) {
+            "## C++ compiler not found; the UI falls back to the pure-Python helpers" | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Append -Encoding utf8
+            exit 0
+          }
+          cmd /c "`"$vcvars`" && cl /O2 /LD /std:c++17 native\cppmc_native.cpp /Fe:cppmc\native\cppmc_native.dll"
+          if (Test-Path cppmc/native/cppmc_native.dll) {
+            Get-Item cppmc/native/cppmc_native.dll | Select-Object Name, Length | Out-String | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Append -Encoding utf8
+          } else {
+            "## C++ build failed; the UI falls back to the pure-Python helpers" | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Append -Encoding utf8
+          }
+
       - name: Smoke test the launcher code
         run: python CppMc.py --list
 
       - name: Build single-file exe
         shell: pwsh
         run: |
-          python -m PyInstaller --noconfirm --clean --onefile --noconsole --name CppMc --icon "$env:GITHUB_WORKSPACE/assets/CppMc.ico" --workpath build/ci --specpath build/ci --distpath dist "$env:GITHUB_WORKSPACE/CppMc.py" *> build_log.txt
+          $pyiArgs = @(
+            "--noconfirm", "--clean", "--onefile", "--noconsole", "--name", "CppMc",
+            "--icon", "$env:GITHUB_WORKSPACE/assets/CppMc.ico",
+            "--workpath", "build/ci", "--specpath", "build/ci", "--distpath", "dist"
+          )
+          if (Test-Path cppmc/native/cppmc_native.dll) {
+            $pyiArgs += @("--add-binary", "cppmc/native/cppmc_native.dll;cppmc/native")
+          }
+          $pyiArgs += "$env:GITHUB_WORKSPACE/CppMc.py"
+          python -m PyInstaller @pyiArgs *> build_log.txt
           $code = $LASTEXITCODE
           "### PyInstaller exit code: $code" | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Append -Encoding utf8
           Get-Content -LiteralPath build_log.txt -Tail 40 | Out-String | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Append -Encoding utf8
@@ -81,7 +112,8 @@ jobs:
 
             **这次更新：**
             - 找不到合适的 Java 时自动从 Adoptium 下载 Temurin（装到 `%APPDATA%\CppMc\java`，也可以自己填路径）
-            - 支持微软正版账号登录（设备码流程），登录后自动填名字，离线模式依然可用
+            - 支持微软正版账号登录（设备码流程），登录后自动填名字、离线模式依然可用
+            - 界面动画由一小段 C++17 原生模块（ctypes）加速，DLL 缺失自动回退纯 Python
             - 宣传片 GIF / MP4 也放在这里了（README 里直接可看）
 
             **用法：**
