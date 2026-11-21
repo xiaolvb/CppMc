@@ -54,7 +54,7 @@ CppMc（显示名 **C++mc**）是一个能真正把 Minecraft 原版启动起来
 - **Java 自动下载**：找不到合适的 Java 就自动从 Adoptium 拉一个 Temurin 装到 `%APPDATA%\CppMc\java`，也可以自己填路径
 - 生成 JVM 参数、classpath、游戏参数并启动 `net.minecraft.client.main.Main`
 - 现代版本（`arguments` 格式，1.13+）与老版本（`minecraftArguments` 格式，1.12-）都支持
-- Tkinter 图形界面 + 命令行两种用法，零第三方依赖
+- Tkinter 图形界面 + 命令行两种用法，零第三方依赖；界面动画由一小段 **C++17**（`native/cppmc_native.cpp`，ctypes 调用）加速，DLL 缺失时自动回退纯 Python 实现
 
 界面是深色主题的，有进度条、实时日志、内存设置、账号状态、Java 路径与自动下载开关。
 
@@ -131,9 +131,11 @@ cppmc/core.py         # 核心：版本元数据、下载、规则解析、参�
 cppmc/java.py         # Java 检测、Adoptium 自动下载、版本匹配
 cppmc/auth.py         # 微软设备码登录、Xbox/XSTS/Minecraft 链路、令牌缓存
 cppmc/cli.py          # 命令行接口
-cppmc/ui.py           # Tkinter 界面实现
+cppmc/ui.py           # Tkinter 界面实现（C++ 缓动/节流驱动进度条与日志刷新）
 cppmc/gui.py          # 界面入口（转出 ui.run_gui）
+cppmc/native.py       # ctypes 加载 C++ 模块，缺失时纯 Python 回退
 cppmc/__init__.py     # 包导出
+native/cppmc_native.cpp  # C++17 原生界面辅助：smoothstep 缓动、帧节流、进度追赶
 assets/               # 启动器自己的图标与横幅（SVG）
 tools/                # 图标生成、宣传片帧与剪辑脚本
 run.bat               # Windows 一键启动
@@ -161,6 +163,7 @@ print(command)   # 或 launcher.launch(command, on_line=print)
 7. **Java**：按版本 JSON 里的 `javaVersion.majorVersion` 决定需要哪个大版本，缺就从 Adoptium 的 `assets/latest` 接口取 Temurin，下载后校验 SHA256 再解压。
 8. **账号**：设备码轮询 → Xbox Live RPS → XSTS（把 `XErr` 常见错误码翻译成人话）→ Minecraft `login_with_xbox` → `profile`，令牌过期前 5 分钟自动用 refresh_token 续期。
 9. **线程**：界面在主线程，下载/登录/启动在后台线程，通过 `queue` 回传日志和进度，不会卡界面。
+10. **C++ 加速界面**：`native/cppmc_native.cpp` 是一段 C++17（纯 C ABI），提供 smoothstep 缓动、30fps 帧节流和指数进度追赶；`cppmc/native.py` 经 ctypes 调用，DLL 不存在时数学完全一致的 Python 函数顶上，所以不编译也能跑。
 
 ## 已知限制
 
